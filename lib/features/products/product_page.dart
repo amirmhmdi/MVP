@@ -12,8 +12,13 @@ import 'package:cherry_mvp/core/utils/donor_discount_state_store.dart';
 import 'package:cherry_mvp/core/utils/result.dart';
 import 'package:cherry_mvp/features/checkout/checkout_view_model.dart';
 import 'package:cherry_mvp/features/products/product_viewmodel.dart';
+import 'package:cherry_mvp/features/products/edit_listing/edit_listing_page.dart';
+import 'package:cherry_mvp/features/products/edit_listing/edit_listing_repository.dart';
+import 'package:cherry_mvp/features/home/home_viewmodel.dart';
+import 'package:cherry_mvp/features/profile/profile_listings_view_model.dart';
 import 'package:cherry_mvp/features/products/widgets/product_highlight_title.dart';
 import 'package:cherry_mvp/features/products/widgets/product_information.dart';
+import 'package:cherry_mvp/features/products/widgets/product_safety_actions.dart';
 import 'package:cherry_mvp/features/products/widgets/seller_information.dart';
 import 'package:cherry_mvp/features/products/widgets/product_header_carousel.dart';
 import 'package:cherry_mvp/features/profile/public_user_profile_repository.dart';
@@ -117,22 +122,31 @@ class _ProductPageState extends State<ProductPage> {
     }
 
     final checkoutViewModel = context.watch<CheckoutViewModel>();
-    final isOwnListing = checkoutViewModel.isOwnProduct(product);
+    final displayedProduct = product;
+    final isOwnListing = checkoutViewModel.isOwnProduct(displayedProduct);
+    final canEdit = isOwnListing && context.read<IEditListingRepository>().canEdit(displayedProduct);
     final hasOptionalProductHighlights =
         FeatureFlags.showDonorDiscounts || (!isOwnListing && FeatureFlags.showOtherCharityRequests);
-    final sellerId = NavigationProvider.publicProfileUserId(product.userId);
+    final sellerId = NavigationProvider.publicProfileUserId(displayedProduct.userId);
     final sellerLoad = _sellerFuture(context, sellerId);
+    final canUseSafetyActions = !isOwnListing && sellerId != null && sellerId.isNotEmpty;
 
     return Scaffold(
       bottomNavigationBar: isOwnListing
-          ? null
+          ? (canEdit
+                ? BottomCta(
+                    enabled: true,
+                    text: 'Edit listing',
+                    onPressed: () => _editListing(displayedProduct),
+                  )
+                : null)
           : BottomCta(
               enabled: true,
               text: AppStrings.productPageBuyNow,
               textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               onPressed: () {
                 checkoutViewModel.clearBasket();
-                if (!checkoutViewModel.addItem(product)) {
+                if (!checkoutViewModel.addItem(displayedProduct)) {
                   return;
                 }
                 context.read<NavigationProvider>().navigateTo(
@@ -142,7 +156,17 @@ class _ProductPageState extends State<ProductPage> {
             ),
       body: CustomScrollView(
         slivers: [
-          ProductHeaderCarousel(product, canLike: !isOwnListing),
+          ProductHeaderCarousel(
+            displayedProduct,
+            canLike: !isOwnListing,
+            showSafetyActions: canUseSafetyActions,
+            onSafetyActionSelected: (action) => _handleSafetyAction(
+              context,
+              action,
+              displayedProduct,
+              sellerId!,
+            ),
+          ),
           SliverList.list(
             children: [
               FutureBuilder<PublicUser?>(
@@ -170,21 +194,21 @@ class _ProductPageState extends State<ProductPage> {
                       awards: 0,
                       hasBuyerDiscounts: false,
                     ),
-                    charityDetails: product.charity,
+                    charityDetails: displayedProduct.charity,
                     padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
                   );
                 },
               ),
               const Divider(thickness: 8),
               ProductInformation(
-                product: product,
+                product: displayedProduct,
                 padding: const EdgeInsets.all(16),
               ),
               const Divider(thickness: 8),
               ListTile(
                 title: Text(AppStrings.productPageDescription),
                 titleTextStyle: Theme.of(context).textTheme.titleSmall,
-                subtitle: Text(product.description),
+                subtitle: Text(displayedProduct.description),
                 subtitleTextStyle: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -196,7 +220,7 @@ class _ProductPageState extends State<ProductPage> {
                     if (FeatureFlags.showDonorDiscounts)
                       FutureBuilder<bool?>(
                         future: DonorDiscountStateStore.getDonorDiscountState(
-                          product.id,
+                          displayedProduct.id,
                         ),
                         builder: (context, snapshot) {
                           final bool isDonorDiscountActive = snapshot.data ?? false;
@@ -267,6 +291,25 @@ class _ProductPageState extends State<ProductPage> {
     return _sellerLoad!;
   }
 
+  Future<void> _editListing(Product product) async {
+    final result = await context.read<NavigationProvider>().navigateTo(
+      AppRoutes.editListing,
+      arguments: {'productId': product.id},
+    );
+    if (!mounted || result is! EditListingResult) return;
+    if (result.product != null) {
+      context.read<ProductViewModel>().applyListingUpdate(result.product!);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Listing updated')),
+      );
+    }
+    await Future.wait([
+      context.read<HomeViewModel>().refreshAfterListingEdit(),
+      context.read<ProfileListingsViewModel>().refreshAfterListingEdit(),
+    ]);
+    if (mounted) setState(_loadProduct);
+  }
+
   Future<PublicUser?> _loadPublicSeller(BuildContext context, String? userId) async {
     if (userId == null) return null;
     final repository = context.read<IPublicUserProfileRepository?>();
@@ -277,5 +320,90 @@ class _ProductPageState extends State<ProductPage> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _handleSafetyAction(
+    BuildContext context,
+    ProductSafetyMenuAction action,
+    Product product,
+    String sellerId,
+  ) async {
+    switch (action) {
+      case ProductSafetyMenuAction.reportProduct:
+        await _submitReport(
+          context,
+          title: AppStrings.productPageReportProductTitle,
+          submit: (viewModel, draft) => viewModel.reportProduct(
+            product,
+            reason: draft.reason,
+            message: draft.message,
+          ),
+        );
+        break;
+      case ProductSafetyMenuAction.reportSeller:
+        await _submitReport(
+          context,
+          title: AppStrings.productPageReportSellerTitle,
+          submit: (viewModel, draft) => viewModel.reportSeller(
+            sellerId,
+            reason: draft.reason,
+            message: draft.message,
+          ),
+        );
+        break;
+      case ProductSafetyMenuAction.blockSeller:
+        await _blockSeller(context, sellerId);
+        break;
+    }
+  }
+
+  Future<void> _submitReport(
+    BuildContext context, {
+    required String title,
+    required Future<Result<void>> Function(
+      ProductViewModel viewModel,
+      ReportDraft draft,
+    )
+    submit,
+  }) async {
+    final draft = await showReportProductSheet(context, title: title);
+    if (draft == null || !context.mounted) {
+      return;
+    }
+
+    final result = await submit(context.read<ProductViewModel>(), draft);
+    if (!context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess ? AppStrings.productPageReportSubmitted : result.error ?? AppStrings.productPageReportFailed,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _blockSeller(BuildContext context, String sellerId) async {
+    final confirmed = await showBlockSellerDialog(context);
+    if (!confirmed || !context.mounted) {
+      return;
+    }
+
+    final result = await context.read<ProductViewModel>().blockSeller(sellerId);
+    if (!context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.isSuccess
+              ? AppStrings.productPageBlockSellerSuccess
+              : result.error ?? AppStrings.productPageBlockSellerFailed,
+        ),
+      ),
+    );
   }
 }

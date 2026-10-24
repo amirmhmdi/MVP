@@ -257,6 +257,24 @@ class AppStrings {
   static const productPageBuyNow = 'Buy Now';
   static const productPageYourListing = 'Your listing';
   static const productPageLoadFailed = 'We could not load this listing. Please try again.';
+  static const productPageMoreActions = 'More actions';
+  static const productPageReportProduct = 'Report item';
+  static const productPageReportSeller = 'Report seller';
+  static const productPageBlockSeller = 'Block seller';
+  static const productPageReportProductTitle = 'Report this item';
+  static const productPageReportSellerTitle = 'Report this seller';
+  static const productPageReportReasonPrompt = 'Choose a reason';
+  static const productPageReportMessageLabel = 'Add details';
+  static const productPageReportMessageHint = 'Tell us what happened';
+  static const productPageReportSubmit = 'Submit report';
+  static const productPageReportSubmitted = 'Report submitted';
+  static const productPageReportFailed = 'Could not submit this report';
+  static const productPageBlockSellerTitle = 'Block this seller?';
+  static const productPageBlockSellerMessage = 'You will not see this seller\'s listings on their profile pages.';
+  static const productPageBlockSellerConfirm = 'Block seller';
+  static const productPageBlockSellerSuccess = 'Seller blocked';
+  static const productPageBlockSellerFailed = 'Could not block this seller';
+  static const productPageCancel = 'Cancel';
   static const giveInStyle = 'Give in style';
   static const productIncl = 'Incl.';
   static const askSeller = 'Ask seller';
@@ -305,6 +323,9 @@ class AppStrings {
   static const checkoutFindNearestPickupPoints = 'Find pick-up points';
   static const checkoutNearestPickupPoints = 'Nearest pick-up points';
   static const checkoutMobilePhoneRequired = 'A mobile phone number is required for InPost pickup';
+  static const checkoutRecipientNameRequired = 'Your name is required for pickup delivery.';
+  static const checkoutPickupOnlyCurrently =
+      'Only pick-up point delivery is currently available.';
   static const checkoutPickupPostcodeRequired = 'Please enter a postcode';
   static const checkoutPickupPostcodeInvalid = 'Please enter a valid UK postcode';
   static const checkoutOwnProductNotAllowed = 'You cannot buy your own listing.';
